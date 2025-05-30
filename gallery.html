@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{.Title | default "Immich Gallery"}}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                50: "#eff6ff",
+                100: "#dbeafe",
+                200: "#bfdbfe",
+                300: "#93c5fd",
+                400: "#60a5fa",
+                500: "#3b82f6",
+                600: "#2563eb",
+                700: "#1d4ed8",
+                800: "#1e40af",
+                900: "#1e3a8a",
+                950: "#172554",
+              },
+              accent: {
+                50: "#fff7ed",
+                100: "#ffedd5",
+                200: "#fed7aa",
+                300: "#fdba74",
+                400: "#fb923c",
+                500: "#f97316",
+                600: "#ea580c",
+                700: "#c2410c",
+                800: "#9a3412",
+                900: "#7c2d12",
+                950: "#431407",
+              },
+            },
+            fontFamily: {
+              sans: [
+                "-apple-system",
+                "BlinkMacSystemFont",
+                "Segoe UI",
+                "Roboto",
+                "Helvetica",
+                "Arial",
+                "sans-serif",
+              ],
+            },
+            animation: {
+              "fade-in": "fadeIn 0.5s ease-in-out",
+              "slide-up": "slideUp 0.3s ease-out",
+              "scale-in": "scaleIn 0.2s ease-out",
+            },
+            keyframes: {
+              fadeIn: {
+                "0%": { opacity: "0" },
+                "100%": { opacity: "1" },
+              },
+              slideUp: {
+                "0%": { transform: "translateY(20px)", opacity: "0" },
+                "100%": { transform: "translateY(0)", opacity: "1" },
+              },
+              scaleIn: {
+                "0%": { transform: "scale(0.95)", opacity: "0" },
+                "100%": { transform: "scale(1)", opacity: "1" },
+              },
+            },
+          },
+        },
+        darkMode: "media",
+      };
+    </script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+    </style>
+  </head>
+  <body
+    class="min-h-screen bg-white dark:bg-black text-gray-900 dark:text-gray-100"
+  >
+  <nav class="w-full p-4">
+    <div class="flex justify-between items-center">
+      <h1 class="text-xl font-semibold flex items-center justify-start gap-2">
+        <img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/immich.svg" alt="Immich Logo" class="w-8 h-8">
+        Immich Gallery</h1>
+      <!-- <button>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-down-to-line"><path d="M12 17V3"></path><path d="m6 11 6 6 6-6"></path><path d="M19 21H5"></path></svg>
+      </button> -->
+    </div>
+  </nav>
+    <main
+      class="mx-auto grid grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-4 p-4"
+    >
+      {{range $index, $thumbnail := .ThumbnailURLs}}
+        <div
+          class="relative overflow-hidden rounded cursor-pointer aspect-[4/3]"
+        >
+          <img
+            id="thumbnail-{{$index}}"
+            src="{{$thumbnail}}"
+            loading="lazy"
+            class="w-full h-full object-cover hover:scale-105 transition-all duration-300"
+            onclick="openPreview({{$index}})"
+            onmouseover="prefetchPreviewImage({{$index}})"
+          />
+      </div>
+      {{end}}
+    </main>
+
+    <!-- Slideshow Modal -->
+    <div
+      id="preview-modal"
+      class="fixed inset-0 z-50 hidden bg-black flex items-center justify-center"
+    >
+      <div class="relative w-full h-full flex items-center justify-center">
+        <!-- Close Button -->
+        <button
+          onclick="closePreview()"
+          class="absolute top-4 right-4 z-10 text-white hover:text-gray-300 transition-colors"
+        >
+          <svg
+            class="w-8 h-8"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            ></path>
+          </svg>
+        </button>
+
+        <!-- Previous Button -->
+        <button
+          onclick="previousImage()"
+          class="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 text-white hover:text-gray-300 transition-colors"
+        >
+          <svg
+            class="w-8 h-8"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M15 19l-7-7 7-7"
+            ></path>
+          </svg>
+        </button>
+
+        <!-- Next Button -->
+        <button
+          onclick="nextImage()"
+          class="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 text-white hover:text-gray-300 transition-colors"
+        >
+          <svg
+            class="w-8 h-8"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M9 5l7 7-7 7"
+            ></path>
+          </svg>
+        </button>
+
+        <!-- Main Image -->
+        <img
+          id="preview-image"
+          class="max-w-full max-h-full object-contain transition-opacity duration-300"
+        />
+
+        <!-- Image Counter -->
+        <div
+          class="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white bg-black bg-opacity-50 px-3 py-1 rounded-full"
+        >
+          <span id="current-image">1</span> / <span id="total-images">1</span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let currentImageIndex = 0;
+      let totalImages = 0;
+      let imageUrls = [];
+
+      // Initialize image URLs array
+      document.addEventListener("DOMContentLoaded", function () {
+        const thumbnails = document.querySelectorAll("[id^='thumbnail-']");
+        totalImages = thumbnails.length;
+        document.getElementById("total-images").textContent = totalImages;
+
+        // Build array of full-size image URLs
+        thumbnails.forEach((thumbnail, index) => {
+          imageUrls.push(thumbnail.src.replace("true", "false"));
+        });
+
+        // Add loading animation for images
+        const images = document.querySelectorAll("img");
+        images.forEach((img) => {
+          img.addEventListener("load", function () {
+            this.classList.add("animate-fade-in");
+          });
+        });
+      });
+
+      function openPreview(index) {
+        currentImageIndex = index;
+        const previewModal = document.getElementById("preview-modal");
+        const previewImage = document.getElementById("preview-image");
+
+        previewImage.src = imageUrls[currentImageIndex];
+        updateImageCounter();
+        previewModal.classList.remove("hidden");
+
+        // Add keyboard event listener
+        document.addEventListener("keydown", handleKeyPress);
+      }
+
+      function closePreview() {
+        const previewModal = document.getElementById("preview-modal");
+        previewModal.classList.add("hidden");
+
+        // Remove keyboard event listener
+        document.removeEventListener("keydown", handleKeyPress);
+      }
+
+      function nextImage() {
+        currentImageIndex = (currentImageIndex + 1) % totalImages;
+        updatePreviewImage();
+      }
+
+      function previousImage() {
+        currentImageIndex =
+          (currentImageIndex - 1 + totalImages) % totalImages;
+        updatePreviewImage();
+      }
+
+      function updatePreviewImage() {
+        const previewImage = document.getElementById("preview-image");
+        previewImage.style.opacity = "0";
+
+        setTimeout(() => {
+          previewImage.src = imageUrls[currentImageIndex];
+          previewImage.style.opacity = "1";
+          updateImageCounter();
+        }, 150);
+      }
+
+      function updateImageCounter() {
+        document.getElementById("current-image").textContent =
+          currentImageIndex + 1;
+      }
+
+      function handleKeyPress(event) {
+        switch (event.key) {
+          case "Escape":
+            closePreview();
+            break;
+          case "ArrowLeft":
+            previousImage();
+            break;
+          case "ArrowRight":
+            nextImage();
+            break;
+        }
+      }
+
+      function prefetchPreviewImage(index) {
+        const previewImage = document.getElementById("preview-image");
+        previewImage.src = imageUrls[index];
+      }
+    </script>
+  </body>
+</html>
