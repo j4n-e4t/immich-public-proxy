@@ -13,10 +13,13 @@ FROM alpine/git:latest AS certs
 
 FROM scratch
 
+WORKDIR /app
 # Copy the ca-certificates from the certs stage
+
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY ./gallery.html /gallery.html
-COPY --from=builder /app/main /app/main
+COPY ./templates/ ./templates/
+COPY --from=builder /app/main .
+
 
 ENV IMMICH_BASE_URL=http://immich:8000/
 ENV TS_HOSTNAME=immich-public-proxy

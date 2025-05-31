@@ -9,112 +9,34 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
-	"tailscale.com/tsnet"
 
+	"tailscale.com/tsnet"
 )
 
-type ShareResponse struct {
-	AllowDownload bool        `json:"allowDownload"`
-	AllowUpload   bool        `json:"allowUpload"`
-	Assets        []Asset     `json:"assets"`
-	CreatedAt     time.Time   `json:"createdAt"`
-	Description   interface{} `json:"description"` // Can be null
-	ExpiresAt     interface{} `json:"expiresAt"`   // Can be null
-	ID            string      `json:"id"`
-	Key           string      `json:"key"`
-	Password      string      `json:"password"`
-	ShowMetadata  bool        `json:"showMetadata"`
-	Type          string      `json:"type"`
-	UserID        string      `json:"userId"`
-}
-
-type Asset struct {
-	Checksum         string      `json:"checksum"`
-	DeviceAssetID    string      `json:"deviceAssetId"`
-	DeviceID         string      `json:"deviceId"`
-	DuplicateID      interface{} `json:"duplicateId"` // Can be null
-	Duration         string      `json:"duration"`
-	ExifInfo         ExifInfo    `json:"exifInfo"`
-	FileCreatedAt    time.Time   `json:"fileCreatedAt"`
-	FileModifiedAt   time.Time   `json:"fileModifiedAt"`
-	HasMetadata      bool        `json:"hasMetadata"`
-	ID               string      `json:"id"`
-	IsArchived       bool        `json:"isArchived"`
-	IsFavorite       bool        `json:"isFavorite"`
-	IsOffline        bool        `json:"isOffline"`
-	IsTrashed        bool        `json:"isTrashed"`
-	LibraryID        interface{} `json:"libraryId"`        // Can be null
-	LivePhotoVideoID interface{} `json:"livePhotoVideoId"` // Can be null
-	LocalDateTime    time.Time   `json:"localDateTime"`
-	OriginalFileName string      `json:"originalFileName"`
-	OriginalMimeType string      `json:"originalMimeType"`
-	OriginalPath     string      `json:"originalPath"`
-	OwnerID          string      `json:"ownerId"`
-	People           []interface{} `json:"people"` // Empty array in example
-	Resized          bool        `json:"resized"`
-	Thumbhash        string      `json:"thumbhash"`
-	Type             string      `json:"type"`
-	UpdatedAt        time.Time   `json:"updatedAt"`
-	Visibility       string      `json:"visibility"`
-}
-
-type ExifInfo struct {
-	City             string      `json:"city"`
-	Country          string      `json:"country"`
-	DateTimeOriginal time.Time   `json:"dateTimeOriginal"`
-	Description      string      `json:"description"`
-	ExifImageHeight  int         `json:"exifImageHeight"`
-	ExifImageWidth   int         `json:"exifImageWidth"`
-	ExposureTime     string      `json:"exposureTime"`
-	FNumber          float64     `json:"fNumber"`
-	FileSizeInByte   int         `json:"fileSizeInByte"`
-	FocalLength      float64     `json:"focalLength"`
-	Iso              int         `json:"iso"`
-	Latitude         float64     `json:"latitude"`
-	LensModel        string      `json:"lensModel"`
-	Longitude        float64     `json:"longitude"`
-	Make             string      `json:"make"`
-	Model            string      `json:"model"`
-	ModifyDate       time.Time   `json:"modifyDate"`
-	Orientation      string      `json:"orientation"`
-	ProjectionType   interface{} `json:"projectionType"` // Can be null
-	Rating           interface{} `json:"rating"`         // Can be null
-	State            string      `json:"state"`
-	TimeZone         string      `json:"timeZone"`
-}
-
-// Template data structures
-type Image struct {
-	URL   string
-	Alt   string
-	Title string
-}
 
 type PageData struct {
-	Title    string
-	PreviewURLs []string
+	Title         string
+	PreviewURLs   []string
 	ThumbnailURLs []string
+	IsAlbum       bool
+	AlbumName     string
+	Description   string
+	AssetCount    int
 }
 
-var tmpl *template.Template
+var templates *template.Template
 
 func init() {
-	// Parse the template with custom functions
-	funcMap := template.FuncMap{
-		"default": func(defaultVal, val interface{}) interface{} {
-			if val == nil || val == "" {
-				return defaultVal
-			}
-			return val
-		},
-		"title": strings.Title,
-	}
 
 	var err error
-	tmpl, err = template.New("gallery.html").Funcs(funcMap).ParseFiles("gallery.html")
+	templates, err = template.ParseFiles(
+		"templates/index.html",
+		"templates/nav-bar.html",
+		"templates/gallery.html",
+		// Add any other partial templates here
+	)
 	if err != nil {
-		log.Fatal("Error parsing template:", err)
+		log.Fatalf("Error parsing templates: %v", err)
 	}
 }
 
@@ -157,6 +79,67 @@ func handleAsset(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func getAssetsFromShare(shareData ShareResponse, shareKey string) ([]string, []string, error) {
+	var assets []Asset
+	
+	// Determine which assets to use based on share type
+	switch shareData.Type {
+	case "INDIVIDUAL":
+		assets = shareData.Assets
+	case "ALBUM":
+		if shareData.Album == nil {
+			return nil, nil, fmt.Errorf("album data missing for ALBUM type share")
+		}
+		
+		// For albums, we need to fetch the assets separately
+		// since they're not included in the initial response
+		albumAssets, err := fetchAlbumAssets(shareData.Album.ID, shareKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to fetch album assets: %v", err)
+		}
+		assets = albumAssets
+	default:
+		return nil, nil, fmt.Errorf("unknown share type: %s", shareData.Type)
+	}
+
+	// Convert assets to URLs
+	previewURLs := make([]string, 0, len(assets))
+	thumbnailURLs := make([]string, 0, len(assets))
+	
+	for _, asset := range assets {
+		// Skip non-image assets
+		if asset.Type != "IMAGE" {
+			continue
+		}
+
+		previewURLs = append(previewURLs, "/asset/"+asset.ID+"?key="+shareKey)
+		thumbnailURLs = append(thumbnailURLs, "/asset/"+asset.ID+"?key="+shareKey+"&thumbnail=true")
+	}
+
+	return previewURLs, thumbnailURLs, nil
+}
+
+func fetchAlbumAssets(albumID, shareKey string) ([]Asset, error) {
+	// Fetch album assets using the album ID and share key
+	resp, err := http.Get(getEnv("IMMICH_BASE_URL", "http://immich:2283/") +
+		"api/albums/" + albumID + "?key=" + shareKey)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch album assets, status: %d", resp.StatusCode)
+	}
+
+	var albumData Album
+	if err := json.NewDecoder(resp.Body).Decode(&albumData); err != nil {
+		return nil, err
+	}
+
+	return albumData.Assets, nil
+}
+
 func handleShare(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/share/")
 
@@ -180,31 +163,35 @@ func handleShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert assets to template images
-	previewURLs := make([]string, 0, len(shareData.Assets))
-	thumbnailURLs := make([]string, 0, len(shareData.Assets))
-	for _, asset := range shareData.Assets {
-		// Skip non-image assets
-		if asset.Type != "IMAGE" {
-			continue
-		}
-
-		previewURLs = append(previewURLs, "/asset/" + asset.ID + "?key=" + id)
-		thumbnailURLs = append(thumbnailURLs, "/asset/" + asset.ID + "?key=" + id + "&thumbnail=true")
+	// Get assets based on share type
+	previewURLs, thumbnailURLs, err := getAssetsFromShare(shareData, id)
+	if err != nil {
+		log.Printf("Error getting assets from share: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
 	// Prepare template data
 	data := PageData{
-		Title:    "Immich Gallery",
+		Title:         "Immich Gallery", 
 		PreviewURLs:   previewURLs,
 		ThumbnailURLs: thumbnailURLs,
+		IsAlbum:       shareData.Type == "ALBUM",
+	}
+
+	// Add album-specific data if it's an album
+	if shareData.Type == "ALBUM" && shareData.Album != nil {
+		data.Title = shareData.Album.AlbumName
+		data.AlbumName = shareData.Album.AlbumName
+		data.Description = shareData.Album.Description
+		data.AssetCount = shareData.Album.AssetCount
 	}
 
 	// Set content type and render template
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := templates.Execute(w, data); err != nil {
 		log.Printf("Error executing template: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -217,14 +204,14 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	srv := &tsnet.Server{
-		Hostname: "immich-share",
-		Dir: "./ts",
+		Hostname: "immich-share-dev",
+		Dir:      "./ts",
 	}
 	ln, err := srv.ListenFunnel("tcp", ":443")
 	if err != nil {
 		log.Fatal(err)
 	}
-	
+
 	fmt.Printf("Listening on the Tailscale Funnel Hostname")
 
 	http.HandleFunc("/", notFound)
@@ -232,7 +219,6 @@ func main() {
 	http.HandleFunc("/asset/", handleAsset)
 
 	// Start the server
-	// start the server	
 	err = http.Serve(ln, nil)
 	if err != nil {
 		log.Fatal(err)
