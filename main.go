@@ -36,7 +36,7 @@ func init() {
 
 func main() {
 	srv := &tsnet.Server{
-		Hostname: "immich-share-dev",
+		Hostname: env("TS_HOSTNAME"),
 		Dir:      "./ts",
 	}
 	ln, err := srv.ListenFunnel("tcp", ":443")
