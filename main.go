@@ -2,11 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"html/template"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"tailscale.com/tsnet"
@@ -35,25 +35,34 @@ func init() {
 }
 
 func main() {
-	srv := &tsnet.Server{
-		Hostname: env("TS_HOSTNAME"),
-		Dir:      "./ts",
-	}
-	ln, err := srv.ListenFunnel("tcp", ":443")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("Listening on the Tailscale Funnel Hostname")
+	mode := os.Getenv("MODE")
 
 	http.HandleFunc("/", notFoundHandler)
 	http.HandleFunc("/share/", shareHandler)
 	http.HandleFunc("/asset/", assetHandler)
 
-	// Start the server
-	err = http.Serve(ln, nil)
-	if err != nil {
-		log.Fatal(err)
+	if mode == "tailscale" {
+		srv := &tsnet.Server{
+			Hostname: env("TS_HOSTNAME"),
+			Dir:      "./ts",
+		}
+		ln, err := srv.ListenFunnel("tcp", ":443")
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Listening on the Tailscale Funnel Hostname")
+		err = http.Serve(ln, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else if mode == "local" {
+		log.Printf("Listening locally on :8080")
+		err := http.ListenAndServe(":8080", nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		log.Fatalf("Unknown MODE: %s (expected 'tailscale' or 'local')", mode)
 	}
 }
 
