@@ -117,7 +117,7 @@
           imageUrls.push(thumbnail.src.replace("true", "false"));
         });
 
-        // Add loading animation for images
+        // Add loading animation for images (if animate-fade-in is defined)
         const images = document.querySelectorAll("img");
         images.forEach((img) => {
           img.addEventListener("load", function () {
@@ -131,6 +131,7 @@
         const previewModal = document.getElementById("preview-modal");
         const previewImage = document.getElementById("preview-image");
 
+        // Set the image source directly for initial open
         previewImage.src = imageUrls[currentImageIndex];
         updateImageCounter();
         previewModal.classList.remove("hidden");
@@ -160,13 +161,23 @@
 
       function updatePreviewImage() {
         const previewImage = document.getElementById("preview-image");
+
+        // Fade out
         previewImage.style.opacity = "0";
 
+        // After a short delay, change the source and fade in
         setTimeout(() => {
           previewImage.src = imageUrls[currentImageIndex];
-          previewImage.style.opacity = "1";
+          // Ensure image is loaded before fading in to prevent empty flicker
+          previewImage.onload = () => {
+            previewImage.style.opacity = "1";
+          };
+          // If image is already cached, onload might not fire, so set opacity anyway
+          if (previewImage.complete) {
+            previewImage.style.opacity = "1";
+          }
           updateImageCounter();
-        }, 150);
+        }, 150); // This delay should match your transition duration for a smooth fade
       }
 
       function updateImageCounter() {
@@ -188,10 +199,10 @@
         }
       }
 
+      // Prefetch function to load images into cache
       function prefetchPreviewImage(index) {
-        const previewImage = document.getElementById("preview-image");
-        previewImage.src = imageUrls[index];
+        const img = new Image();
+        img.src = imageUrls[index];
       }
     </script>
 {{end}}
-
