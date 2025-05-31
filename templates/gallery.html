@@ -1,208 +1,117 @@
 {{define "gallery"}}
-    <!-- Gallery -->
-    <main
-      class="mx-auto grid grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-4 p-4"
-    >
-      {{range $index, $thumbnail := .ThumbnailURLs}}
-        <div
-          class="relative overflow-hidden rounded cursor-pointer aspect-[4/3]"
-        >
-          <img
-            id="thumbnail-{{$index}}"
-            src="{{$thumbnail}}"
-            loading="lazy"
-            class="w-full h-full object-cover hover:scale-105 transition-all duration-300"
-            onclick="openPreview({{$index}})"
-            onmouseover="prefetchPreviewImage({{$index}})"
-          />
-      </div>
-      {{end}}
-    </main>
+<!-- Gallery -->
+<div x-data="galleryData()" x-init="init()">
+  <main class="mx-auto grid grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-4 p-4">
+    {{range $index, $thumbnail := .ThumbnailURLs}}
+    <div class="relative overflow-hidden rounded cursor-pointer aspect-[4/3]">
+      <img id="thumbnail-{{$index}}" src="{{$thumbnail}}" loading="lazy"
+        class="w-full h-full object-cover hover:scale-105 transition-all duration-300" @click="openPreview({{$index}})"
+        @mouseover="prefetchPreviewImage({{$index}})" />
+    </div>
+    {{end}}
+  </main>
 
-    <!-- Slideshow Modal -->
-    <div
-      id="preview-modal"
-      class="fixed inset-0 z-50 hidden bg-black flex items-center justify-center"
-    >
-      <div class="relative w-full h-full flex items-center justify-center">
-        <!-- Close Button -->
-        <button
-          onclick="closePreview()"
-          class="absolute top-4 right-4 z-10 text-white hover:text-gray-300 transition-colors"
-        >
-          <svg
-            class="w-8 h-8"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            ></path>
-          </svg>
-        </button>
+  <!-- Slideshow Modal -->
+  <div x-show="isModalOpen" x-transition.opacity.duration.300ms @keydown.escape.window="closePreview()"
+    @keydown.arrow-left.window="previousImage()" @keydown.arrow-right.window="nextImage()"
+    class="fixed inset-0 z-50 bg-black flex items-center justify-center">
+    <div class="relative w-full h-full flex items-center justify-center">
+      <!-- Close Button -->
+      <button @click="closePreview()"
+        class="absolute top-4 right-4 z-10 text-white hover:text-gray-300 transition-colors">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
 
-        <!-- Previous Button -->
-        <button
-          onclick="previousImage()"
-          class="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 text-white hover:text-gray-300 transition-colors"
-        >
-          <svg
-            class="w-8 h-8"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M15 19l-7-7 7-7"
-            ></path>
-          </svg>
-        </button>
+      <!-- Previous Button -->
+      <button @click="previousImage()"
+        class="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 text-white hover:text-gray-300 transition-colors">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+        </svg>
+      </button>
 
-        <!-- Next Button -->
-        <button
-          onclick="nextImage()"
-          class="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 text-white hover:text-gray-300 transition-colors"
-        >
-          <svg
-            class="w-8 h-8"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M9 5l7 7-7 7"
-            ></path>
-          </svg>
-        </button>
+      <!-- Next Button -->
+      <button @click="nextImage()"
+        class="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 text-white hover:text-gray-300 transition-colors">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+        </svg>
+      </button>
 
-        <!-- Main Image -->
-        <img
-          id="preview-image"
-          class="max-w-full max-h-full object-contain transition-opacity duration-300"
-        />
+      <!-- Main Image -->
+      <img :src="currentImageUrl" x-show="!isImageLoading" x-transition.opacity.duration.300ms
+        class="max-w-full max-h-full object-contain" @load="isImageLoading = false" />
 
-        <!-- Image Counter -->
-        <div
-          class="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white bg-black bg-opacity-50 px-3 py-1 rounded-full"
-        >
-          <span id="current-image">1</span> / <span id="total-images">1</span>
-        </div>
+      <!-- Image Counter -->
+      <div
+        class="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white bg-black bg-opacity-50 px-3 py-1 rounded-full">
+        <span x-text="currentImageIndex + 1"></span> / <span x-text="totalImages"></span>
       </div>
     </div>
+  </div>
+</div>
 
-    <!-- Script -->
-    <script>
-      let currentImageIndex = 0;
-      let totalImages = 0;
-      let imageUrls = [];
+<!-- Script -->
+<script>
+  function galleryData() {
+    return {
+      currentImageIndex: 0,
+      totalImages: 0,
+      imageUrls: [],
+      isModalOpen: false,
+      isImageLoading: false,
 
-      // Initialize image URLs array
-      document.addEventListener("DOMContentLoaded", function () {
+      get currentImageUrl() {
+        return this.imageUrls[this.currentImageIndex] || '';
+      },
+
+      init() {
+        // Initialize image URLs array
         const thumbnails = document.querySelectorAll("[id^='thumbnail-']");
-        totalImages = thumbnails.length;
-        document.getElementById("total-images").textContent = totalImages;
+        this.totalImages = thumbnails.length;
 
         // Build array of full-size image URLs
-        thumbnails.forEach((thumbnail, index) => {
-          imageUrls.push(thumbnail.src.replace("true", "false"));
+        thumbnails.forEach((thumbnail) => {
+          this.imageUrls.push(thumbnail.src.replace("true", "false"));
         });
 
-        // Add loading animation for images (if animate-fade-in is defined)
+        // Add loading animation for thumbnail images
         const images = document.querySelectorAll("img");
         images.forEach((img) => {
           img.addEventListener("load", function () {
             this.classList.add("animate-fade-in");
           });
         });
-      });
+      },
 
-      function openPreview(index) {
-        currentImageIndex = index;
-        const previewModal = document.getElementById("preview-modal");
-        const previewImage = document.getElementById("preview-image");
+      openPreview(index) {
+        this.currentImageIndex = index;
+        this.isImageLoading = true;
+        this.isModalOpen = true;
+      },
 
-        // Set the image source directly for initial open
-        previewImage.src = imageUrls[currentImageIndex];
-        updateImageCounter();
-        previewModal.classList.remove("hidden");
+      closePreview() {
+        this.isModalOpen = false;
+        this.isImageLoading = false;
+      },
 
-        // Add keyboard event listener
-        document.addEventListener("keydown", handleKeyPress);
-      }
+      nextImage() {
+        this.isImageLoading = true;
+        this.currentImageIndex = (this.currentImageIndex + 1) % this.totalImages;
+      },
 
-      function closePreview() {
-        const previewModal = document.getElementById("preview-modal");
-        previewModal.classList.add("hidden");
+      previousImage() {
+        this.isImageLoading = true;
+        this.currentImageIndex = (this.currentImageIndex - 1 + this.totalImages) % this.totalImages;
+      },
 
-        // Remove keyboard event listener
-        document.removeEventListener("keydown", handleKeyPress);
-      }
-
-      function nextImage() {
-        currentImageIndex = (currentImageIndex + 1) % totalImages;
-        updatePreviewImage();
-      }
-
-      function previousImage() {
-        currentImageIndex =
-          (currentImageIndex - 1 + totalImages) % totalImages;
-        updatePreviewImage();
-      }
-
-      function updatePreviewImage() {
-        const previewImage = document.getElementById("preview-image");
-
-        // Fade out
-        previewImage.style.opacity = "0";
-
-        // After a short delay, change the source and fade in
-        setTimeout(() => {
-          previewImage.src = imageUrls[currentImageIndex];
-          // Ensure image is loaded before fading in to prevent empty flicker
-          previewImage.onload = () => {
-            previewImage.style.opacity = "1";
-          };
-          // If image is already cached, onload might not fire, so set opacity anyway
-          if (previewImage.complete) {
-            previewImage.style.opacity = "1";
-          }
-          updateImageCounter();
-        }, 150); // This delay should match your transition duration for a smooth fade
-      }
-
-      function updateImageCounter() {
-        document.getElementById("current-image").textContent =
-          currentImageIndex + 1;
-      }
-
-      function handleKeyPress(event) {
-        switch (event.key) {
-          case "Escape":
-            closePreview();
-            break;
-          case "ArrowLeft":
-            previousImage();
-            break;
-          case "ArrowRight":
-            nextImage();
-            break;
-        }
-      }
-
-      // Prefetch function to load images into cache
-      function prefetchPreviewImage(index) {
+      prefetchPreviewImage(index) {
         const img = new Image();
-        img.src = imageUrls[index];
+        img.src = this.imageUrls[index];
       }
-    </script>
+    }
+  }
+</script>
 {{end}}
