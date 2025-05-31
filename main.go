@@ -7,21 +7,16 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 
 	"tailscale.com/tsnet"
 )
-
 
 type PageData struct {
 	Title         string
 	PreviewURLs   []string
 	ThumbnailURLs []string
 	IsAlbum       bool
-	AlbumName     string
-	Description   string
-	AssetCount    int
 }
 
 var templates *template.Template
@@ -33,24 +28,47 @@ func init() {
 		"templates/index.html",
 		"templates/nav-bar.html",
 		"templates/gallery.html",
-		// Add any other partial templates here
 	)
 	if err != nil {
 		log.Fatalf("Error parsing templates: %v", err)
 	}
 }
 
-func handleAsset(w http.ResponseWriter, r *http.Request) {
+func main() {
+	srv := &tsnet.Server{
+		Hostname: "immich-share-dev",
+		Dir:      "./ts",
+	}
+	ln, err := srv.ListenFunnel("tcp", ":443")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Listening on the Tailscale Funnel Hostname")
+
+	http.HandleFunc("/", notFoundHandler)
+	http.HandleFunc("/share/", shareHandler)
+	http.HandleFunc("/asset/", assetHandler)
+
+	// Start the server
+	err = http.Serve(ln, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+// http handlers
+
+func assetHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/asset/")
 	key := r.URL.Query().Get("key")
-	thumbnail := r.URL.Query().Get("thumbnail")
 
 	immichURL := ""
-	if thumbnail == "true" {
-		immichURL = getEnv("IMMICH_BASE_URL", "http://immich:2283/") +
+	if r.URL.Query().Get("thumbnail") == "true" {
+		immichURL = env("IMMICH_BASE_URL") +
 			"api/assets/" + id + "/thumbnail?size=thumbnail&key=" + key
 	} else {
-		immichURL = getEnv("IMMICH_BASE_URL", "http://immich:2283/") +
+		immichURL = env("IMMICH_BASE_URL") +
 			"api/assets/" + id + "/thumbnail?size=preview&key=" + key
 	}
 
@@ -66,11 +84,7 @@ func handleAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "image/jpeg"
-	}
-	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
@@ -79,71 +93,10 @@ func handleAsset(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getAssetsFromShare(shareData ShareResponse, shareKey string) ([]string, []string, error) {
-	var assets []Asset
-	
-	// Determine which assets to use based on share type
-	switch shareData.Type {
-	case "INDIVIDUAL":
-		assets = shareData.Assets
-	case "ALBUM":
-		if shareData.Album == nil {
-			return nil, nil, fmt.Errorf("album data missing for ALBUM type share")
-		}
-		
-		// For albums, we need to fetch the assets separately
-		// since they're not included in the initial response
-		albumAssets, err := fetchAlbumAssets(shareData.Album.ID, shareKey)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to fetch album assets: %v", err)
-		}
-		assets = albumAssets
-	default:
-		return nil, nil, fmt.Errorf("unknown share type: %s", shareData.Type)
-	}
-
-	// Convert assets to URLs
-	previewURLs := make([]string, 0, len(assets))
-	thumbnailURLs := make([]string, 0, len(assets))
-	
-	for _, asset := range assets {
-		// Skip non-image assets
-		if asset.Type != "IMAGE" {
-			continue
-		}
-
-		previewURLs = append(previewURLs, "/asset/"+asset.ID+"?key="+shareKey)
-		thumbnailURLs = append(thumbnailURLs, "/asset/"+asset.ID+"?key="+shareKey+"&thumbnail=true")
-	}
-
-	return previewURLs, thumbnailURLs, nil
-}
-
-func fetchAlbumAssets(albumID, shareKey string) ([]Asset, error) {
-	// Fetch album assets using the album ID and share key
-	resp, err := http.Get(getEnv("IMMICH_BASE_URL", "http://immich:2283/") +
-		"api/albums/" + albumID + "?key=" + shareKey)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch album assets, status: %d", resp.StatusCode)
-	}
-
-	var albumData Album
-	if err := json.NewDecoder(resp.Body).Decode(&albumData); err != nil {
-		return nil, err
-	}
-
-	return albumData.Assets, nil
-}
-
-func handleShare(w http.ResponseWriter, r *http.Request) {
+func shareHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/share/")
 
-	resp, err := http.Get(getEnv("IMMICH_BASE_URL", "http://immich:2283/") +
+	resp, err := http.Get(env("IMMICH_BASE_URL") +
 		"api/shared-links/me?key=" + id)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -173,18 +126,14 @@ func handleShare(w http.ResponseWriter, r *http.Request) {
 
 	// Prepare template data
 	data := PageData{
-		Title:         "Immich Gallery", 
+		Title:         "Immich Gallery",
 		PreviewURLs:   previewURLs,
 		ThumbnailURLs: thumbnailURLs,
 		IsAlbum:       shareData.Type == "ALBUM",
 	}
 
-	// Add album-specific data if it's an album
 	if shareData.Type == "ALBUM" && shareData.Album != nil {
 		data.Title = shareData.Album.AlbumName
-		data.AlbumName = shareData.Album.AlbumName
-		data.Description = shareData.Album.Description
-		data.AssetCount = shareData.Album.AssetCount
 	}
 
 	// Set content type and render template
@@ -198,36 +147,6 @@ func handleShare(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func notFound(w http.ResponseWriter, r *http.Request) {
+func notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
-}
-
-func main() {
-	srv := &tsnet.Server{
-		Hostname: "immich-share-dev",
-		Dir:      "./ts",
-	}
-	ln, err := srv.ListenFunnel("tcp", ":443")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("Listening on the Tailscale Funnel Hostname")
-
-	http.HandleFunc("/", notFound)
-	http.HandleFunc("/share/", handleShare)
-	http.HandleFunc("/asset/", handleAsset)
-
-	// Start the server
-	err = http.Serve(ln, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func getEnv(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
 }
